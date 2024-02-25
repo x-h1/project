@@ -71,6 +71,7 @@ echo -n '#!/bin/bash
 chmod +x /usr/local/bin/ssl_renew.sh
 if ! grep -q 'ssl_renew.sh' /var/spool/cron/crontabs/root;then (crontab -l;echo "15 03 */3 * * /usr/local/bin/ssl_renew.sh") | crontab;fi
 
+cat /etc/xray/xray.crt /etc/xray/xray.key | tee /etc/haproxy/xdxl.pem
 mkdir -p /home/vps/public_html
 
 # set uuid
@@ -150,7 +151,7 @@ cat > /etc/xray/config.json << END
        "streamSettings":{
            "network": "ws",
            "wsSettings": {
-               "path": "/trojan-ws"
+               "path": "/trojan"
             }
          }
      },
@@ -191,7 +192,7 @@ cat > /etc/xray/config.json << END
           "streamSettings":{
              "network": "grpc",
              "grpcSettings": {
-                "serviceName": "vless-grpc"
+                "serviceName": "vless"
            }
         }
      },
@@ -211,7 +212,7 @@ cat > /etc/xray/config.json << END
        "streamSettings":{
          "network": "grpc",
             "grpcSettings": {
-                "serviceName": "vmess-grpc"
+                "serviceName": "vmess"
           }
         }
      },
@@ -231,7 +232,7 @@ cat > /etc/xray/config.json << END
          "streamSettings":{
          "network": "grpc",
            "grpcSettings": {
-               "serviceName": "trojan-grpc"
+               "serviceName": "trojan"
          }
       }
    },
@@ -449,7 +450,7 @@ END
 cat > /etc/systemd/system/trojan-go.service << END
 [Unit]
 Description=Trojan-Go Service By PT.XD Project
-Documentation=github.com/adammoi/vipies
+Documentation=github.com/zhets
 After=network.target nss-lookup.target
 
 [Service]
@@ -502,8 +503,8 @@ cat >/etc/nginx/conf.d/xray.conf <<EOF
              listen [::]:8880;
              listen 2082;
              listen [::]:2082;
-             listen 443 ssl http2;
-             listen [::]:443 http2;
+             #listen 443 ssl http2;
+             #listen [::]:443 http2;
              listen 2053 ssl http2;
              listen [::]:2053 http2;
              listen 8443 ssl http2 reuseport;
@@ -540,7 +541,7 @@ sed -i '$ iproxy_set_header Connection "upgrade";' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_set_header Host \$http_host;' /etc/nginx/conf.d/xray.conf
 sed -i '$ i}' /etc/nginx/conf.d/xray.conf
 
-sed -i '$ ilocation = /trojan-ws' /etc/nginx/conf.d/xray.conf
+sed -i '$ ilocation = /trojan' /etc/nginx/conf.d/xray.conf
 sed -i '$ i{' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_redirect off;' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_pass http://127.0.0.1:10003;' /etc/nginx/conf.d/xray.conf
@@ -588,7 +589,7 @@ sed -i '$ iproxy_set_header Connection "upgrade";' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_set_header Host \$http_host;' /etc/nginx/conf.d/xray.conf
 sed -i '$ i}' /etc/nginx/conf.d/xray.conf
 
-sed -i '$ ilocation ^~ /vless-grpc' /etc/nginx/conf.d/xray.conf
+sed -i '$ ilocation ^~ /vless' /etc/nginx/conf.d/xray.conf
 sed -i '$ i{' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_redirect off;' /etc/nginx/conf.d/xray.conf
 sed -i '$ igrpc_set_header X-Real-IP \$remote_addr;' /etc/nginx/conf.d/xray.conf
@@ -597,7 +598,7 @@ sed -i '$ igrpc_set_header Host \$http_host;' /etc/nginx/conf.d/xray.conf
 sed -i '$ igrpc_pass grpc://127.0.0.1:24456;' /etc/nginx/conf.d/xray.conf
 sed -i '$ i}' /etc/nginx/conf.d/xray.conf
 
-sed -i '$ ilocation ^~ /vmess-grpc' /etc/nginx/conf.d/xray.conf
+sed -i '$ ilocation ^~ /vmess' /etc/nginx/conf.d/xray.conf
 sed -i '$ i{' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_redirect off;' /etc/nginx/conf.d/xray.conf
 sed -i '$ igrpc_set_header X-Real-IP \$remote_addr;' /etc/nginx/conf.d/xray.conf
@@ -606,7 +607,7 @@ sed -i '$ igrpc_set_header Host \$http_host;' /etc/nginx/conf.d/xray.conf
 sed -i '$ igrpc_pass grpc://127.0.0.1:31234;' /etc/nginx/conf.d/xray.conf
 sed -i '$ i}' /etc/nginx/conf.d/xray.conf
 
-sed -i '$ ilocation ^~ /trojan-grpc' /etc/nginx/conf.d/xray.conf
+sed -i '$ ilocation ^~ /trojan' /etc/nginx/conf.d/xray.conf
 sed -i '$ i{' /etc/nginx/conf.d/xray.conf
 sed -i '$ iproxy_redirect off;' /etc/nginx/conf.d/xray.conf
 sed -i '$ igrpc_set_header X-Real-IP \$remote_addr;' /etc/nginx/conf.d/xray.conf
@@ -615,7 +616,7 @@ sed -i '$ igrpc_set_header Host \$http_host;' /etc/nginx/conf.d/xray.conf
 sed -i '$ igrpc_pass grpc://127.0.0.1:33456;' /etc/nginx/conf.d/xray.conf
 sed -i '$ i}' /etc/nginx/conf.d/xray.conf
 
-cat /etc/xray/xray.crt /etc/xray/xray.key | tee /etc/haproxy/xdxl.pem
+# // Haproxy
 rm -fr /etc/haproxy/haproxy.cfg
 cat >/etc/haproxy/haproxy.cfg <<END
 global
@@ -637,7 +638,7 @@ frontend ssh-ssl
 backend ssh-backend
     mode tcp
     option tcplog
-    server ssh-server 127.0.0.1:3303
+    server ssh-server 127.0.0.1:22
 END
 
 echo -e "$yell[SERVICE]$NC Restart All Service"
@@ -654,8 +655,8 @@ systemctl stop trojan-go
 systemctl start trojan-go
 systemctl enable trojan-go
 systemctl restart trojan-go
-systemctl enable haproxy.service
-systemctl restart haproxy.service
+systemctl enable haproxy
+systemctl restart haproxy
 
 mv /root/domain /etc/xray/ 
 rm -f ins-xray.sh  
