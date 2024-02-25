@@ -1,0 +1,157 @@
+#!/bin/bash
+clear
+date
+source /root/.gh
+sleep 1
+ntpdate pool.ntp.org 
+timedatectl set-ntp true
+echo -e "[ ${green}INFO$NC ] Enable chronyd"
+systemctl enable chronyd
+systemctl restart chronyd
+sleep 1
+echo -e "[ ${green}INFO$NC ] Enable chrony"
+systemctl enable chrony
+systemctl restart chrony
+timedatectl set-timezone Asia/Jakarta
+sleep 1
+echo -e "[ ${green}INFO$NC ] Setting chrony tracking"
+chronyc sourcestats -v
+chronyc tracking -v
+echo -e "[ ${green}INFO$NC ] Setting dll"
+apt clean all && apt update
+apt install socat xz-utils wget apt-transport-https gnupg gnupg2 gnupg1 dnsutils lsb-release -y 
+apt install socat bash-completion ntpdate -y
+ntpdate pool.ntp.org
+apt -y install chrony
+apt install pwgen netcat -y
+
+# install xray
+sleep 1
+echo -e "[ ${green}INFO$NC ] Downloading & Installing xray core"
+domainSock_dir="/run/xray";! [ -d $domainSock_dir ] && mkdir  $domainSock_dir
+chown www-data.www-data $domainSock_dir
+# Make Folder XRay
+mkdir -p /var/log/xray
+mkdir -p /etc/xray
+chown www-data.www-data /var/log/xray
+chmod +x /var/log/xray
+touch /var/log/xray/access.log
+touch /var/log/xray/error.log
+touch /var/log/xray/access2.log
+touch /var/log/xray/error2.log
+# / / Ambil Xray Core Version Terbaru
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data --version 1.5.6
+
+domain=$(cat /root/domain)
+
+## crt xray
+systemctl stop nginx
+mkdir /root/.acme.sh
+curl https://acme-install.netlify.app/acme.sh -o /root/.acme.sh/acme.sh
+chmod +x /root/.acme.sh/acme.sh
+/root/.acme.sh/acme.sh --upgrade --auto-upgrade
+/root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+/root/.acme.sh/acme.sh --issue -d $domain --standalone -k ec-256
+~/.acme.sh/acme.sh --installcert -d $domain --fullchainpath /etc/xray/xray.crt --keypath /etc/xray/xray.key --ecc
+
+# nginx renew ssl
+echo -n '#!/bin/bash
+/etc/init.d/nginx stop
+"/root/.acme.sh"/acme.sh --cron --home "/root/.acme.sh" &> /root/renew_ssl.log
+/etc/init.d/nginx start
+/etc/init.d/nginx status
+' > /usr/local/bin/ssl_renew.sh
+chmod +x /usr/local/bin/ssl_renew.sh
+if ! grep -q 'ssl_renew.sh' /var/spool/cron/crontabs/root;then (crontab -l;echo "15 03 */3 * * /usr/local/bin/ssl_renew.sh") | crontab;fi
+
+cat /etc/xray/xray.crt /etc/xray/xray.key | tee /etc/haproxy/xdxl.pem
+
+mkdir -p /home/vps/public_html
+uuid=$(cat /proc/sys/kernel/random/uuid)
+rm -rf /etc/systemd/system/xray.service.d
+rm -rf /etc/systemd/system/xray@.service
+
+cat <<EOF> /etc/systemd/system/xray.service
+Description=Xray Service By PT.XD Project
+Documentation=https://github.com/xtls
+After=network.target nss-lookup.target
+
+[Service]
+User=www-data
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/xray run -config /etc/xray/config.json
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+cat > /etc/systemd/system/runn.service <<EOF
+[Unit]
+Description=Mantap-Sayang
+After=network.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/mkdir -p /var/run/xray
+ExecStart=/usr/bin/chown www-data:www-data /var/run/xray
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Install Trojan Go
+latest_version="$(curl -s "https://api.github.com/repos/p4gefau1t/trojan-go/releases" | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
+trojango_link="https://github.com/p4gefau1t/trojan-go/releases/download/v${latest_version}/trojan-go-linux-amd64.zip"
+mkdir -p "/usr/bin/trojan-go"
+mkdir -p "/etc/trojan-go"
+cd `mktemp -d`
+curl -sL "${trojango_link}" -o trojan-go.zip
+unzip -q trojan-go.zip && rm -rf trojan-go.zip
+mv trojan-go /usr/local/bin/trojan-go
+chmod +x /usr/local/bin/trojan-go
+mkdir /var/log/trojan-go/
+touch /etc/trojan-go/akun.conf
+touch /var/log/trojan-go/trojan-go.log
+
+wget -O /etc/trojan-go/config.json ${GITHUB_REPO}/trojan.json
+chmod 777 /etc/trojan-go/config.json
+
+cat > /etc/systemd/system/trojan-go.service << END
+[Unit]
+Description=Trojan-Go Service Mod By PT.XD Project
+Documentation=github.com/zhets
+After=network.target nss-lookup.target
+
+[Service]
+User=root
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/trojan-go -config /etc/trojan-go/config.json
+Restart=on-failure
+RestartPreventExitStatus=23
+
+[Install]
+WantedBy=multi-user.target
+END
+
+# Trojan Go Uuid
+cat > /etc/trojan-go/uuid.txt << END
+$uuid
+END
+
+rm -fr /etc/haproxy/haproxy.cfg
+wget -O /etc/nginx/conf.d/xray.conf ${GITHUB_REPO}/xray.conf
+wget -O /etc/nginx/conf.d/vps.conf ${GITHUB_REPO}/vps.conf
+wget -O /etc/haproxy/haproxy.cfg ${GITHUB_REPO}/haproxy.cfg
+sed -i "s/xxx/${domain}/g" /etc/nginx/conf.d/xray.conf
+
+mv /root/domain /etc/xray/ 
+rm -f ins-xray
